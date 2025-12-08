@@ -1,10 +1,23 @@
 import pandas as pd
-from utils import map_price_level, is_similar_type
+from utils import map_price_level, is_similar_type, generate_price_rules
 
 def load_and_clean_data(file_path="data/POI.csv"):
     df = pd.read_csv(file_path)
-    df = df[["poi_id","name","city_norm","type","price","rating","latitude","longitude"]]
-    df["price_level"] = df["price"].apply(map_price_level)
+    df = df[["poi_id","name","city_norm","type","price","rating","latitude","longitude", "category"]]
+    
+    rules = generate_price_rules(df)
+    # print("\n=== Auto-Generated Price Level Rules ===")
+    # for cat, r in rules.items():
+    #     print(f"\nCategory: {cat}")
+    #     print(f"Type: {r['type']}")
+    #     print(f"L0 (Low threshold): {r['L0']}")
+    #     print(f"L1 (Medium threshold): {r['L1']}")
+    #     print(f"Quantiles = {r['details']}")
+    
+    df["price_level"] = df.apply(
+        lambda r: map_price_level(r["category"], r["price"], rules),
+        axis=1
+    )
     df["city_norm"] = df["city_norm"].str.strip().str.lower()
     df["type"] = df["type"].str.strip().str.lower()
     return df
