@@ -39,6 +39,7 @@ def generate_training_dataset(df, save_path=None):
                     label += 0.15
                 if abs(poi["price_level"] - user_price) <= 1:
                     label += 0.2
+                poi = poi.fillna({"rating": 0})
                 label += float(poi["rating"]) / 5 * 0.1
 
                 rows.append({
