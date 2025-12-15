@@ -39,7 +39,7 @@ def similarity_weight(user_type, poi_type):
     return 0.90
 
 def generate_price_rules(df, medium_cap_default=200_000):
-    quantiles = df.groupby("category")["price"].quantile([0.25, 0.5, 0.75]).unstack()
+    quantiles = df.groupby("category")["poi_price"].quantile([0.25, 0.5, 0.75]).unstack()
     quantiles.columns = ["Q1", "Q2", "Q3"]
 
     rules = {}

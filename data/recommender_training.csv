@@ -1,4 +1,4 @@
-user_city,user_type,user_price,poi_city,poi_type,price,rating,latitude,longitude,poi_id,label
+user_city,user_type,user_price,poi_city,poi_type,poi_price,rating,latitude,longitude,poi_id,label
 da nang,natural,0,da nang,natural,0,4.7,16.0616944,108.2469346,attraction00001,0.9939999999999999
 da nang,natural,1,da nang,natural,0,4.7,16.0616944,108.2469346,attraction00001,0.9939999999999999
 da nang,natural,2,da nang,natural,0,4.7,16.0616944,108.2469346,attraction00001,0.7939999999999999

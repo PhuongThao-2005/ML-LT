@@ -3,7 +3,7 @@ from utils import map_price_level, is_similar_type, generate_price_rules
 
 def load_and_clean_data(file_path="data/POI.csv"):
     df = pd.read_csv(file_path)
-    df = df[["poi_id","name","city_norm","type","price","rating","latitude","longitude", "category"]]
+    df = df[["poi_id","name","city_norm","type","poi_price","rating","latitude","longitude", "category"]]
     
     rules = generate_price_rules(df)
     # print("\n=== Auto-Generated Price Level Rules ===")
@@ -15,7 +15,7 @@ def load_and_clean_data(file_path="data/POI.csv"):
     #     print(f"Quantiles = {r['details']}")
     
     df["price_level"] = df.apply(
-        lambda r: map_price_level(r["category"], r["price"], rules),
+        lambda r: map_price_level(r["category"], r["poi_price"], rules),
         axis=1
     )
     df["city_norm"] = df["city_norm"].str.strip().str.lower()
@@ -37,7 +37,7 @@ def generate_training_dataset(df, save_path=None):
                     label += 0.3
                 elif is_similar_type(user_type, poi["type"]):
                     label += 0.15
-                if abs(poi["price_level"] - user_price) <= 1:
+                if abs(poi["poi_price"] - user_price) <= 1:
                     label += 0.2
                 poi = poi.fillna({"rating": 0})
                 label += float(poi["rating"]) / 5 * 0.1
@@ -48,7 +48,7 @@ def generate_training_dataset(df, save_path=None):
                     "user_price": user_price,
                     "poi_city": poi["city_norm"],
                     "poi_type": poi["type"],
-                    "poi_price": poi["price_level"],
+                    "poi_price": poi["poi_price"],
                     "rating": poi["rating"],
                     "latitude": poi["latitude"],
                     "longitude": poi["longitude"],
