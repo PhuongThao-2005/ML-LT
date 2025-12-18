@@ -371,6 +371,8 @@ class TimeAwareMultiDayPlanner:
                     "travel_before_min": travel_min,
                     "longitude": self.poi_df.loc[poi_id, 'longitude'],
                     "latitude": self.poi_df.loc[poi_id, 'latitude'],
+                    "address": self.poi_df.loc[poi_id, 'address'],
+                    "rating": self.poi_df.loc[poi_id, 'rating'],
                     "duration_min": visit_time if step_type == 'Visit' else 0
                 })
 
@@ -394,6 +396,8 @@ class TimeAwareMultiDayPlanner:
                             "travel_before_min": t,
                             "longitude": self.poi_df.loc[lunch_id, 'longitude'],
                             "latitude": self.poi_df.loc[lunch_id, 'latitude'],
+                            "address": self.poi_df.loc[lunch_id, 'address'],
+                            "rating": self.poi_df.loc[lunch_id, 'rating'],
                             "duration_min": 90
                         })
 
@@ -418,6 +422,8 @@ class TimeAwareMultiDayPlanner:
                             "travel_before_min": t,
                             "longitude": self.poi_df.loc[cafe_id, 'longitude'],
                             "latitude": self.poi_df.loc[cafe_id, 'latitude'],
+                            "address": self.poi_df.loc[cafe_id, 'address'],
+                            "rating": self.poi_df.loc[cafe_id, 'rating'],
                             "duration_min": 60
                         })
 
@@ -471,6 +477,8 @@ class TimeAwareMultiDayPlanner:
                             "travel_before_min": t,
                             "longitude": self.poi_df.loc[dinner_id, 'longitude'],
                             "latitude": self.poi_df.loc[dinner_id, 'latitude'],
+                            "address": self.poi_df.loc[dinner_id, 'address'],
+                            "rating": self.poi_df.loc[dinner_id, 'rating'],
                             "duration_min": 90
                         })
 
@@ -493,6 +501,8 @@ class TimeAwareMultiDayPlanner:
                     "travel_before_min": t_home,
                     "longitude": self.poi_df.loc[start_poi_id, 'longitude'],
                     "latitude": self.poi_df.loc[start_poi_id, 'latitude'],
+                    "address": self.poi_df.loc[start_poi_id, 'address'],
+                    "rating": self.poi_df.loc[start_poi_id, 'rating'],
                     "duration_min": 0
                 })
 

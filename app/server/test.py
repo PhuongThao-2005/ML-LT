@@ -70,4 +70,4 @@ if __name__ == "__main__":
     time.sleep(2)
     
     # Test 2: Câu hỏi cho Hà Nội
-    test_api_response("Đi Hà Nội 2 ngày ăn uống tiết kiệm")
+    test_api_response("Đi Đà Nẵng 2 ngày ăn uống tiết kiệm")
