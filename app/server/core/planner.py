@@ -369,6 +369,8 @@ class TimeAwareMultiDayPlanner:
                     "name": self.poi_df.loc[poi_id, 'name'],
                     "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
                     "travel_before_min": travel_min,
+                    "longitude": self.poi_df.loc[poi_id, 'longitude'],
+                    "latitude": self.poi_df.loc[poi_id, 'latitude'],
                     "duration_min": visit_time if step_type == 'Visit' else 0
                 })
 
