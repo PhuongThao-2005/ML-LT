@@ -85,11 +85,3 @@ def map_price_level(category, price, rules):
     if price <= r["L1"]:
         return 1
     return 2
-
-def calculate_similarity_score(user_type, poi_type):
-    u = str(user_type).lower().strip()
-    p = str(poi_type).lower().strip()
-
-    if u == p: return 0.30
-    if p in TYPE_RELATIONS.get(u, []): return 0.15
-    return 0.0
