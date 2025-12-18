@@ -5,7 +5,7 @@ import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import LabelEncoder
-from src.utils import calculate_similarity_score
+from utils import calculate_similarity_score
 
 # ================= 1. DOMAIN LOGIC ===================
 TYPE_RELATIONS = {
