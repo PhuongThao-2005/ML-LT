@@ -1,7 +1,0 @@
-export * from './Header'
-export * from './Input'
-export * from './Map'
-export * from './Timeline'
-export * from './Result'
-export * from './Homepage'
-export * from './Footer'
