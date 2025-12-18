@@ -1,25 +1,43 @@
 import pandas as pd
 from utils import map_price_level, is_similar_type, generate_price_rules
 
-def load_and_clean_data(file_path="data/POI.csv"):
+def load_and_clean_data(file_path="data/POI.csv",save_path=None,overwrite=False):
     df = pd.read_csv(file_path)
-    df = df[["poi_id","name","city_norm","type","poi_price","rating","latitude","longitude", "category"]]
-    
-    rules = generate_price_rules(df)
-    # print("\n=== Auto-Generated Price Level Rules ===")
-    # for cat, r in rules.items():
-    #     print(f"\nCategory: {cat}")
-    #     print(f"Type: {r['type']}")
-    #     print(f"L0 (Low threshold): {r['L0']}")
-    #     print(f"L1 (Medium threshold): {r['L1']}")
-    #     print(f"Quantiles = {r['details']}")
-    
-    df["price_level"] = df.apply(
-        lambda r: map_price_level(r["category"], r["poi_price"], rules),
-        axis=1
-    )
-    df["city_norm"] = df["city_norm"].str.strip().str.lower()
-    df["type"] = df["type"].str.strip().str.lower()
+
+    # --- Nếu đã có price_level thì không tạo lại ---
+    if "price_level" in df.columns and not overwrite:
+        print("✓ price_level already exists")
+    else:
+        required_cols = ["category", "poi_price"]
+        for c in required_cols:
+            if c not in df.columns:
+                raise ValueError(f"Missing column: {c}")
+
+        rules = generate_price_rules(df)
+
+        df["price_level"] = df.apply(
+            lambda r: map_price_level(
+                r["category"],
+                r["poi_price"],
+                rules
+            ),
+            axis=1
+        )
+
+        print("✓ price_level added")
+
+    # --- Normalize NHẸ (không đụng cột khác) ---
+    if "city_norm" in df.columns:
+        df["city_norm"] = df["city_norm"].astype(str).str.strip().str.lower()
+
+    if "type" in df.columns:
+        df["type"] = df["type"].astype(str).str.strip().str.lower()
+
+    # --- Lưu lại FULL schema ---
+    if save_path:
+        df.to_csv(save_path, index=False)
+        print(f"✓ Saved POI with full columns → {save_path}")
+
     return df
 
 def generate_training_dataset(df, save_path=None):
