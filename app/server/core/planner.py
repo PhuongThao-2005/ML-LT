@@ -392,6 +392,8 @@ class TimeAwareMultiDayPlanner:
                             "name": self.poi_df.loc[lunch_id, 'name'],
                             "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
                             "travel_before_min": t,
+                            "longitude": self.poi_df.loc[lunch_id, 'longitude'],
+                            "latitude": self.poi_df.loc[lunch_id, 'latitude'],
                             "duration_min": 90
                         })
 
@@ -414,6 +416,8 @@ class TimeAwareMultiDayPlanner:
                             "name": self.poi_df.loc[cafe_id, 'name'],
                             "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
                             "travel_before_min": t,
+                            "longitude": self.poi_df.loc[cafe_id, 'longitude'],
+                            "latitude": self.poi_df.loc[cafe_id, 'latitude'],
                             "duration_min": 60
                         })
 
@@ -465,6 +469,8 @@ class TimeAwareMultiDayPlanner:
                             "name": self.poi_df.loc[dinner_id, 'name'] + (f" ({search_source})" if search_source=="Near Hotel" else ""),
                             "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
                             "travel_before_min": t,
+                            "longitude": self.poi_df.loc[dinner_id, 'longitude'],
+                            "latitude": self.poi_df.loc[dinner_id, 'latitude'],
                             "duration_min": 90
                         })
 
@@ -485,6 +491,8 @@ class TimeAwareMultiDayPlanner:
                     "name": "End of Day",
                     "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
                     "travel_before_min": t_home,
+                    "longitude": self.poi_df.loc[start_poi_id, 'longitude'],
+                    "latitude": self.poi_df.loc[start_poi_id, 'latitude'],
                     "duration_min": 0
                 })
 
