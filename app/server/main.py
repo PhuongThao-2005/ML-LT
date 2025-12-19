@@ -12,6 +12,11 @@ from core.recommender import CatBoostRecommender
 from core.llm_processor import call_gemini
 from core.db import Database
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 PATH = {
     "poi": 'data/POI.csv',
     "dist": 'data/distance_km.csv',
@@ -25,7 +30,7 @@ app = FastAPI(title="Travel Itinerary AI")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=[os.getenv("FRONTEND_URL")],  # In production, specify your frontend URL
     allow_credentials=True, 
     allow_methods=["*"],
     allow_headers=["*"],
