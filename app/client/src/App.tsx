@@ -1,8 +1,9 @@
 import { Header, Input, Result, Homepage, Footer } from "./components"
-import { use, useState } from "react"
+import { useState } from "react"
+import { type POIResponse } from "./types";
 
 function App() {
-  const [result, setResult] = useState<any[]>([])
+  const [result, setResult] = useState<POIResponse | null>(null);
 
   return (
     <div className="h-dvh">
@@ -11,10 +12,10 @@ function App() {
           src="/cover.jpg" 
           className="h-83 w-full object-cover object-[50%_83%] absolute -z-10 opacity-95"
         />
-        <Header />
+        <Header setResult={setResult}/>
         <Input setResult={setResult} />
       </div>
-      <Homepage />
+      {result ? <Result result={result} /> : <Homepage />}
       <Footer />
     </div>
   )
