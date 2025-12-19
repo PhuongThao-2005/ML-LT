@@ -1,6 +1,9 @@
 from google import genai
 import json
 import re
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 def build_prompt(user_text):
     return f"""
@@ -93,7 +96,7 @@ USER TEXT:
 
 def call_gemini(user_text):
     try:
-        client = genai.Client(api_key="AIzaSyA9ybFOe0BXP2AxmPDgeiVVpomn-p5-yt0")
+        client = genai.Client(api_key=os.getenv("GENAI_API_KEY"))
         
         # Gọi model
         response = client.models.generate_content(

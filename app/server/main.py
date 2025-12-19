@@ -1,5 +1,7 @@
 import re
+import math
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import pandas as pd
@@ -8,6 +10,7 @@ import pandas as pd
 from core.planner import TimeAwareMultiDayPlanner, RouteOptimizer, HistoryAnalyzer
 from core.recommender import CatBoostRecommender
 from core.llm_processor import call_gemini
+from core.db import Database
 
 PATH = {
     "poi": 'data/POI.csv',
@@ -18,6 +21,16 @@ PATH = {
 }
 
 app = FastAPI(title="Travel Itinerary AI")
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_credentials=True, 
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 engine_instance = {}
 
 @app.on_event("startup")
@@ -47,6 +60,26 @@ def load_resources():
 
 class NaturalLanguageRequest(BaseModel):
     query: str
+
+def sanitize_for_json(obj):
+    """
+    Recursively clean data to ensure JSON compliance.
+    Converts NaN, Infinity to None and handles numpy/pandas types.
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, (pd.Series, pd.DataFrame)):
+        return sanitize_for_json(obj.to_dict())
+    elif hasattr(obj, 'item'):  # numpy types
+        return sanitize_for_json(obj.item())
+    else:
+        return obj
 
 # --- 3. API ENDPOINT ---
 @app.post("/api/chat-plan")
@@ -108,16 +141,42 @@ async def create_plan(req: NaturalLanguageRequest):
         
         if not schedule:
             return {"status": "error", "message": "Không thể tạo lịch trình."}
-            
-        return {
+        
+        # Clean the schedule data to ensure JSON compliance
+        clean_schedule = sanitize_for_json(schedule)
+        
+        db = Database()
+        
+        tour_id = db.save_tour({
+            "details": {
+                "city": city_key,
+                "start_point": start_name,
+                "days": user_days,
+                "itinerary": clean_schedule
+            }
+        })
+           
+        response = {
+            "tour_id": tour_id,
             "status": "success",
             "city": city_key,
             "start_point": start_name,
             "days": user_days,
-            "itinerary": schedule
-        }
+            "itinerary": clean_schedule
+        }   
+            
+        return response
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    
+    
+@app.get("/api/history/{tour_id}")
+async def fetch_history(tour_id: int):
+    db = Database()
+    tour = db.get_tour_by_ID(tour_id)
+    if not tour:
+        raise HTTPException(status_code=404, detail="Lịch trình không tồn tại.")
+    return tour["details"]
