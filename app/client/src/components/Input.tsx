@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { GrPlan } from "react-icons/gr";
 import { TbHistory } from "react-icons/tb";
 import { mutatePlan, fetchHistory } from "../libs/api";
+import type { POIResponse } from "../types";
 
 interface InputProps {
-  setResult: (result: any[]) => void;
+  setResult: (result: POIResponse | null) => void;
 }
 
 export const Input: React.FC<InputProps> = ({ 
@@ -15,25 +16,30 @@ export const Input: React.FC<InputProps> = ({
   const [index, setIndex] = useState(0);
 
   const [query, setQuery] = useState("");
-  const [history, setHistory] = useState<{ id: number; query: string }[]>([]);
+  const [history, setHistory] = useState<{ id: number; name: string; query: string }[]>([]);
+
+  const [loading, setLoading] = useState(false);
 
   const handleSaveHistory = async () => {
     if (query.length === 0) return;
-
+    setLoading(true);
     const data = await mutatePlan(query);
+    setLoading(false);
     setResult(data);
 
-    if (!query.trim() || !data.id) return;
-    const newHistoryItem = { id: data.id, query: query };
-    const newHistory = [newHistoryItem, ...history.filter(item => item.query !== query).slice(0, 5)];
+    if (!query.trim() || !data) return;
+    const newHistoryItem = { id: data.tour_id, name: data.city, query };
+    const newHistory = [newHistoryItem, ...history.filter(item => item.name !== query).slice(0, 5)];
     setHistory(newHistory);
     localStorage.setItem("history", JSON.stringify(newHistory));
   }
 
-  const handleHistoryClick = async (historyId: number, query: string) => {
-    const history = await fetchHistory(historyId);
+  const handleHistoryClick = async (id: number, query: string) => {
+    setLoading(true);
+    const history = await fetchHistory(id);
     setResult(history);
     setQuery(query);
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -95,12 +101,20 @@ export const Input: React.FC<InputProps> = ({
                 className="text-sm mr-2 transition text-black px-2 border rounded-xl border-gray-400 cursor-pointer flex justify-center items-center gap-1"
               >
                 <TbHistory />
-                {item.query}
+                {item.name}
               </button>
             ))
           )}
         </div>
       </div>
+      {loading && (
+        <div className="fixed inset-0 bg-black/30 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg flex flex-col items-center">
+            <div className="ease-linear rounded-full border-8 border-t-8 border-gray-200 border-t-blue-500 h-16 w-16 mb-4 animate-spin"></div>
+            <div className="font-semibold text-gray-700">Đang lên kế hoạch...</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
