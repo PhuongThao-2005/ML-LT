@@ -3,7 +3,7 @@
 import pandas as pd
 import random
 
-df = pd.read_csv("POI_final1.csv")
+df = pd.read_csv("POI.csv")
 
 # group theo city_norm
 hotels = df[df["poi_id"].str.startswith("hotel")]
