@@ -435,7 +435,7 @@ class TimeAwareMultiDayPlanner:
             # End of skeleton loop
             
             # ---------- DINNER CHECK (17:30+) ----------
-# ---------- DINNER CHECK (Logic mới: Gần chơi -> Hoặc Gần Khách Sạn) ----------
+            # ---------- DINNER CHECK (Logic mới: Gần chơi -> Hoặc Gần Khách Sạn) ----------
             # Kiểm tra sau khi đã đi được một lúc (sau 17:30)
             print (f"   [DEBUG] Kết thúc ngày {day_idx+1}, giờ hiện tại: {current_time:.2f}, has_dinner: {has_dinner}, prev_id: {prev_id}, start_poi_id: {start_poi_id}")
             if prev_id and not has_dinner:
