@@ -73,6 +73,14 @@ class NCFRecommender:
         train_df = full_df.iloc[:len(train_df)].reset_index(drop=True)
         val_df   = full_df.iloc[len(train_df):].reset_index(drop=True)
 
+        self.train_config = dict(
+            emb_dim=self.emb_dim,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            patience=patience
+        )
+
         # ---------- Model ----------
         self.model = NCFModel(
             n_users=len(self.user_encoder.classes_),

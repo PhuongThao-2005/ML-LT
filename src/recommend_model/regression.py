@@ -25,9 +25,16 @@ class LinearRecommender(BaseRecommender):
 
 
 class RandomForestRecommender(BaseRecommender):
-    def __init__(self):
+    def __init__(self, n_estimators=200, max_depth=None, max_features=0.8, random_state=42):
         super().__init__(model_name="RandomForest")
-    
+        self.rf_params = dict(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            max_features=max_features,
+            random_state=random_state,
+            n_jobs=-1
+        )
+
     def train(self, df):
         df = self.feature_engineering(df)
         df = self.fit_encoders(df)
@@ -35,17 +42,12 @@ class RandomForestRecommender(BaseRecommender):
         X = df[self.features]
         y = df["label"]
 
-        self.model = RandomForestRegressor(
-            n_estimators=200,
-            max_depth=12,
-            max_features=0.7,
-            random_state=42,
-            n_jobs=-1
-        )
+        self.model = RandomForestRegressor(**self.rf_params)
 
         self.model.fit(X, y)
-        print(f"[{self.model_name}] Training finished.")
-
+        
+        print(f"[{self.model_name}] Training finished")
+        print("Params:", self.rf_params)
 
 class CatBoostRecommender(BaseRecommender):
     def __init__(self):
