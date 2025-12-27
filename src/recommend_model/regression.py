@@ -1,4 +1,3 @@
-from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -51,6 +50,7 @@ class RandomForestRecommender(BaseRecommender):
 class CatBoostRecommender(BaseRecommender):
     def __init__(self):
         super().__init__(model_name="CatBoost")
+        self.evals_result = None
 
     def train(self, train_df, val_df=None):
         train_df = self.feature_engineering(train_df)
@@ -88,7 +88,10 @@ class CatBoostRecommender(BaseRecommender):
             y_train,
             cat_features=self.cat_features,
             eval_set=eval_set,
-            use_best_model=val_df is not None
+            use_best_model=val_df is not None,
+            verbose=False
         )
+        
+        self.evals_result = self.model.get_evals_result()
 
         print(f"[{self.model_name}] Training finished.")
