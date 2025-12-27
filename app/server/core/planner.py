@@ -174,36 +174,48 @@ class TimeAwareMultiDayPlanner:
     # =========================
     # SMART NEARBY POI SELECTOR
     # =========================
-    def _find_smart_next_poi(self, center_id, candidate_df, fallback_type=None, max_time_limit=None):
+    def _find_smart_next_poi(self, center_id, candidate_df, fallback_type=None, max_time_limit=None, exclude_ids=None):
         """
         Tìm POI tiếp theo. 
         - max_time_limit (int): Nếu set, chỉ trả về POI cách center_id dưới số phút này.
         """
         if center_id is None: return None
+        if exclude_ids is None: exclude_ids = []
 
-        # 1. Fallback: Nếu candidate_df rỗng hoặc không đủ, lấy từ DB gốc
+        # 1. Tiền xử lý: Loại bỏ các ID bị loại trừ (tránh trùng lặp 100%)
+        if not candidate_df.empty:
+            candidate_df = candidate_df[~candidate_df['poi_id'].isin(exclude_ids)].copy()
+
+        # 2. Lọc Junk POIs (Văn phòng, đại lý tour ảo) để lịch trình sạch hơn
+        junk_keywords = ['tours', 'travel co', 'agency', 'office', 'motorcycle rental', 'rentabike']
+        if fallback_type == 'attraction' or fallback_type is None:
+            # Chỉ lọc rác nếu là tìm điểm tham quan
+            mask_junk = candidate_df['name'].str.lower().str.contains('|'.join(junk_keywords))
+            candidate_df = candidate_df[~mask_junk].copy()
+
+        # 3. Fallback: Nếu candidate_df rỗng, lấy từ DB gốc
         if candidate_df.empty and fallback_type:
             mask = self.poi_df['type'].apply(self._get_type_group) == fallback_type
             candidate_df = self.poi_df[mask].reset_index()
-            candidate_df = candidate_df[candidate_df['poi_id'] != center_id]
+            # Loại trừ ID hiện tại và junk một lần nữa trong fallback
+            candidate_df = candidate_df[~candidate_df['poi_id'].isin(exclude_ids)]
+            if fallback_type == 'attraction':
+                mask_junk = candidate_df['name'].str.lower().str.contains('|'.join(junk_keywords))
+                candidate_df = candidate_df[~mask_junk]
 
         if candidate_df.empty: return None
 
-        # 2. Lọc cứng theo thời gian (Nếu có max_time_limit)
-        valid_rows = []
-        
-        # Lấy list ID để optimize
-        # Nếu dataframe quá lớn, chỉ lấy những thằng có khoàng cách địa lý gần trước
+        # 4. Lọc theo khoảng cách địa lý (Sơ loại để tăng tốc)
         if len(candidate_df) > 50:
-             # Sơ loại bằng khoảng cách chim bay (Euclidean) để giảm số lần gọi API/Matrix
             lat_c, lon_c = self.poi_df.loc[center_id, ['latitude', 'longitude']]
-            # 0.1 độ ~ 11km. Lọc sơ bộ trong 15km
-            mask_geo = (np.abs(candidate_df['latitude'] - lat_c) < 0.15) & (np.abs(candidate_df['longitude'] - lon_c) < 0.15)
+            mask_geo = (np.abs(candidate_df['latitude'] - lat_c) < 0.1) & (np.abs(candidate_df['longitude'] - lon_c) < 0.1)
             candidate_df = candidate_df[mask_geo].copy()
 
+        if candidate_df.empty: return None
+
+        # 5. Lọc chính xác theo thời gian di chuyển
+        valid_rows = []
         candidate_ids = candidate_df['poi_id'].tolist()
-        
-        # Giới hạn thời gian tìm kiếm (Mặc định tìm quán trong vòng 30p)
         limit = max_time_limit if max_time_limit else 30 
         
         for idx, pid in enumerate(candidate_ids):
@@ -213,20 +225,15 @@ class TimeAwareMultiDayPlanner:
                     valid_rows.append(candidate_df.iloc[idx])
             except: continue
 
-        # 3. Nếu tìm được quán gần -> Dùng danh sách quán gần
+        # 6. Chọn POI tốt nhất dựa trên điểm số
         if valid_rows:
             candidate_df = pd.DataFrame(valid_rows).reset_index(drop=True)
         else:
-            # Nếu KHÔNG tìm được quán gần trong limit
-            if max_time_limit: return None # Ép buộc trả về None để xử lý logic khác
-            # Nếu không ép buộc, giữ nguyên candidate_df (chấp nhận đi xa - nhưng đây là nguyên nhân gây lỗi 210p)
+            if max_time_limit: return None # Trả về None nếu yêu cầu "phải gần" mà không có
+            # Nếu không tìm được điểm gần, nới lỏng giới hạn hoặc lấy điểm gần nhất về mặt địa lý
             return None 
 
-        # 4. Tính điểm (Score) chọn quán tốt nhất trong danh sách đã lọc
-        dist_vals = np.zeros(len(candidate_df))
-        for i, pid in enumerate(candidate_df['poi_id']):
-            dist_vals[i] = self._distance(center_id, pid)
-            
+        dist_vals = np.array([self._distance(center_id, pid) for pid in candidate_df['poi_id']])
         dist_score = 1 / (dist_vals + 1e-6)
         
         hist_scores = np.zeros(len(candidate_df))
@@ -234,8 +241,8 @@ class TimeAwareMultiDayPlanner:
             for i, pid in enumerate(candidate_df['poi_id']):
                 hist_scores[i] = self.history_engine.get_popularity_score(center_id, pid)
 
-        # Ưu tiên cực cao cho khoảng cách (90%) để tránh nhảy cóc
-        final_scores = 0.9 * dist_score + 0.1 * hist_scores
+        # Cân bằng: 80% Khoảng cách, 20% Độ phổ biến/Gợi ý
+        final_scores = 0.8 * dist_score + 0.2 * hist_scores
         best_idx = np.argmax(final_scores)
         
         return candidate_df.iloc[best_idx]['poi_id']
@@ -290,228 +297,186 @@ class TimeAwareMultiDayPlanner:
     # MAIN PLANNER
     # =========================
     def plan_itinerary(self, user_profile, total_days, start_poi_id, pois_per_day):
-        # 1. Recommendation
-        all_scored = self.recommender.recommend(
-            self.poi_df.reset_index(),
-            user_profile['user_city'],
-            user_profile['user_type'],
-            user_profile['user_price'],
-            top_k=100
-        )
-
-        if all_scored.empty:
-            return []
+        # 1. Recommendation (Giữ nguyên logic của bạn)
+        all_scored = self.recommender.recommend(self.poi_df.reset_index(), user_profile['user_city'], 
+                                               user_profile['user_type'], user_profile['user_price'], top_k=200)
+        if all_scored.empty: return []
 
         all_scored['group'] = all_scored['poi_type'].apply(self._get_type_group)
-
-        pool_attr = all_scored[all_scored['group'] == 'attraction'] \
-            .copy().head(total_days * pois_per_day)
-        pool_food = self.recommender.recommend(
-            self.poi_df.reset_index(),
-            user_profile['user_city'],
-            ['restaurant'],
-            user_profile['user_price'],
-            top_k=50
-        )
+        pool_attr = all_scored[all_scored['group'] == 'attraction'].copy().head(total_days * pois_per_day)
+        pool_food = self.recommender.recommend(self.poi_df.reset_index(), user_profile['user_city'], ['restaurant'], user_profile['user_price'], top_k=50)
         pool_cafe = all_scored[all_scored['group'] == 'cafe'].copy()
 
-        k = min(total_days, len(pool_attr))
-        if k <= 0:
-            return []
-
-        # 2. Clustering
-        pool_attr['day_cluster'] = self._balanced_clustering(pool_attr.copy(), k)
+        pool_attr['day_cluster'] = self._balanced_clustering(pool_attr.copy(), total_days)
         full_schedule = []
 
-        # 3. Daily Loop
         for day_idx, cluster_id in enumerate(sorted(pool_attr['day_cluster'].unique())):
-            if day_idx >= total_days:
-                break
-
-            day_attr_ids = pool_attr[
-                pool_attr['day_cluster'] == cluster_id
-            ]['poi_id'].tolist()
-
-            if not day_attr_ids:
-                continue
-
+            if day_idx >= total_days: break
+            
+            day_attr_ids = pool_attr[pool_attr['day_cluster'] == cluster_id]['poi_id'].tolist()
             visit_time = self._calculate_dynamic_pacing(len(day_attr_ids))
-
-            # TSP Optimization
-            opt_res = self.optimizer.optimize_route(
-                day_attr_ids,
-                start_poi_id,
-                max_time_minutes=960,
-                visit_time_per_poi=visit_time
-            )
-
-            if opt_res['status'] != 'success':
-                continue
+            opt_res = self.optimizer.optimize_route(day_attr_ids, start_poi_id, max_time_minutes=960, visit_time_per_poi=visit_time)
+            
+            if opt_res['status'] != 'success': continue
 
             skeleton = opt_res['route']
             final_day_route = []
-
-            current_time = 8.5 # Start at 8:30 AM
+            current_time = 8.5 
             has_lunch = has_cafe = has_dinner = False
             prev_id = None
+            visited_in_day = [start_poi_id] 
 
-            # 4. Simulation & Insertion
+            # --- SKELETON LOOP ---
             for step in skeleton:
                 poi_id = step['poi_id']
-                step_type = step['type']
+                visited_in_day.append(poi_id)
 
                 travel_min = self.optimizer.get_time_between(prev_id, poi_id) if prev_id else 0
                 current_time += travel_min / 60.0
 
+                # Append Visit
                 final_day_route.append({
                     "poi_id": poi_id,
-                    "type": step_type,
+                    "order": 0, # Sẽ re-index sau
+                    "type": step['type'],
                     "name": self.poi_df.loc[poi_id, 'name'],
                     "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
-                    "travel_before_min": travel_min,
-                    "longitude": self.poi_df.loc[poi_id, 'longitude'],
-                    "latitude": self.poi_df.loc[poi_id, 'latitude'],
-                    "address": self.poi_df.loc[poi_id, 'address'],
-                    "rating": self.poi_df.loc[poi_id, 'rating'],
-                    "duration_min": visit_time if step_type == 'Visit' else 0
+                    "travel_before_min": int(travel_min),
+                    "duration_min": int(visit_time) if step['type'] == 'Visit' else 0,
+                    "longitude": float(self.poi_df.loc[poi_id, 'longitude']),
+                    "latitude": float(self.poi_df.loc[poi_id, 'latitude']),
+                    "address": str(self.poi_df.loc[poi_id, 'address']),
+                    "rating": float(self.poi_df.loc[poi_id, 'rating'])
                 })
-
-                if step_type == 'Visit':
-                    current_time += visit_time / 60.0
                 
+                if step['type'] == 'Visit': current_time += visit_time / 60.0
                 prev_id = poi_id
 
-                # ---------- LUNCH CHECK (11:00+) ----------
-                if not has_lunch and current_time >= 11.0:
-                    lunch_id = self._find_smart_next_poi(prev_id, pool_food, 'food')
+                # --- LUNCH INSERTION ---
+                if not has_lunch and current_time >= 11.5:
+                    lunch_id = self._find_smart_next_poi(prev_id, pool_food, 'food', exclude_ids=visited_in_day)
                     if lunch_id:
+                        visited_in_day.append(lunch_id)
                         t = self.optimizer.get_time_between(prev_id, lunch_id)
                         current_time += t / 60.0
-
                         final_day_route.append({
                             "poi_id": lunch_id,
+                            "order": 0,
                             "type": "Lunch",
                             "name": self.poi_df.loc[lunch_id, 'name'],
                             "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
-                            "travel_before_min": t,
-                            "longitude": self.poi_df.loc[lunch_id, 'longitude'],
-                            "latitude": self.poi_df.loc[lunch_id, 'latitude'],
-                            "address": self.poi_df.loc[lunch_id, 'address'],
-                            "rating": self.poi_df.loc[lunch_id, 'rating'],
-                            "duration_min": 90
+                            "travel_before_min": int(t),
+                            "duration_min": 90,
+                            "longitude": float(self.poi_df.loc[lunch_id, 'longitude']),
+                            "latitude": float(self.poi_df.loc[lunch_id, 'latitude']),
+                            "address": str(self.poi_df.loc[lunch_id, 'address']),
+                            "rating": float(self.poi_df.loc[lunch_id, 'rating'])
                         })
+                        current_time += 1.5; prev_id = lunch_id; has_lunch = True
 
-                        current_time += 1.5
-                        prev_id = lunch_id
-                        has_lunch = True
-                        pool_food = pool_food[pool_food['poi_id'] != lunch_id]
-                        continue # Skip cafe check immediately after lunch
+            # --- GAP FILLING ---
+            if current_time < 16.5:
+                extra_pool = all_scored[~all_scored['poi_id'].isin(visited_in_day) & (all_scored['group'] == 'attraction')]
+                extra_id = self._find_smart_next_poi(prev_id, extra_pool, max_time_limit=20, exclude_ids=visited_in_day)
+                if extra_id:
+                    visited_in_day.append(extra_id)
+                    t = self.optimizer.get_time_between(prev_id, extra_id)
+                    current_time += t/60.0
+                    final_day_route.append({
+                        "poi_id": extra_id,
+                        "order": 0,
+                        "type": "Visit",
+                        "name": self.poi_df.loc[extra_id, 'name'] + " (Extra)",
+                        "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
+                        "travel_before_min": int(t),
+                        "duration_min": 60,
+                        "longitude": float(self.poi_df.loc[extra_id, 'longitude']),
+                        "latitude": float(self.poi_df.loc[extra_id, 'latitude']),
+                        "address": str(self.poi_df.loc[extra_id, 'address']),
+                        "rating": float(self.poi_df.loc[extra_id, 'rating'])
+                    })
+                    current_time += 1.0; prev_id = extra_id
 
-                # ---------- CAFE CHECK (15:00+) ----------
-                if has_lunch and not has_cafe and current_time >= 15.0:
-                    cafe_id = self._find_smart_next_poi(prev_id, pool_cafe, 'cafe')
-                    if cafe_id:
-                        t = self.optimizer.get_time_between(prev_id, cafe_id)
-                        current_time += t / 60.0
+            # --- CAFE ---
+            if not has_cafe and 15.0 <= current_time < 17.5:
+                cafe_id = self._find_smart_next_poi(prev_id, pool_cafe, 'cafe', exclude_ids=visited_in_day)
+                if cafe_id:
+                    visited_in_day.append(cafe_id)
+                    t = self.optimizer.get_time_between(prev_id, cafe_id)
+                    current_time += t/60.0
+                    final_day_route.append({
+                        "poi_id": cafe_id,
+                        "order": 0,
+                        "type": "Coffee",
+                        "name": self.poi_df.loc[cafe_id, 'name'],
+                        "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
+                        "travel_before_min": int(t),
+                        "duration_min": 60,
+                        "longitude": float(self.poi_df.loc[cafe_id, 'longitude']),
+                        "latitude": float(self.poi_df.loc[cafe_id, 'latitude']),
+                        "address": str(self.poi_df.loc[cafe_id, 'address']),
+                        "rating": float(self.poi_df.loc[cafe_id, 'rating'])
+                    })
+                    current_time += 1.0; prev_id = cafe_id; has_cafe = True
 
-                        final_day_route.append({
-                            "poi_id": cafe_id,
-                            "type": "Coffee",
-                            "name": self.poi_df.loc[cafe_id, 'name'],
-                            "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
-                            "travel_before_min": t,
-                            "longitude": self.poi_df.loc[cafe_id, 'longitude'],
-                            "latitude": self.poi_df.loc[cafe_id, 'latitude'],
-                            "address": self.poi_df.loc[cafe_id, 'address'],
-                            "rating": self.poi_df.loc[cafe_id, 'rating'],
-                            "duration_min": 60
-                        })
+            # --- ELASTIC PACING ---
+            if current_time < 18.5:
+                wait_min = int((18.5 - current_time) * 60)
+                if final_day_route:
+                    final_day_route[-1]['duration_min'] += wait_min
+                    if final_day_route[-1]['type'] in ['Visit', 'Coffee']:
+                        final_day_route[-1]['name'] += " Relax Time"
+                current_time = 18.5
 
-                        current_time += 1.0
-                        prev_id = cafe_id
-                        has_cafe = True
-                        pool_cafe = pool_cafe[pool_cafe['poi_id'] != cafe_id]
-            
-            # End of skeleton loop
-            
-            # ---------- DINNER CHECK (17:30+) ----------
-            # ---------- DINNER CHECK (Logic mới: Gần chơi -> Hoặc Gần Khách Sạn) ----------
-            # Kiểm tra sau khi đã đi được một lúc (sau 17:30)
-            print (f"   [DEBUG] Kết thúc ngày {day_idx+1}, giờ hiện tại: {current_time:.2f}, has_dinner: {has_dinner}, prev_id: {prev_id}, start_poi_id: {start_poi_id}")
-            if prev_id and not has_dinner:
+            # --- DINNER ---
+            if not has_dinner:
+                dinner_id = self._find_smart_next_poi(prev_id, pool_food, 'food', max_time_limit=25, exclude_ids=visited_in_day)
+                if not dinner_id:
+                    dinner_id = self._find_smart_next_poi(start_poi_id, pool_food, 'food', max_time_limit=15, exclude_ids=visited_in_day)
                 
-                dinner_id = None
-                search_source = "Nearby" # Debug info
-                print ("   [INFO] Tìm quán ăn tối...")
-                
-                # CÁCH 1: Tìm quán ăn ngon ngay gần điểm đang đứng (Max 20 phút đi)
-                dinner_id = self._find_smart_next_poi(
-                    prev_id, pool_food, fallback_type='food', max_time_limit=20
-                )
-
-                # CÁCH 2: Nếu không có quán gần điểm chơi -> Tìm quán gần KHÁCH SẠN (Max 15 phút từ KS)
-                # Đây là cứu cánh để tránh việc đi 210 phút sang quận khác ăn
-                if not dinner_id and start_poi_id:
-                    print("   [INFO] Không có quán gần điểm chơi, tìm quanh Khách Sạn...")
-                    dinner_id = self._find_smart_next_poi(
-                        start_poi_id, # Tâm tìm kiếm là Khách sạn
-                        pool_food, 
-                        fallback_type='food', 
-                        max_time_limit=15 
-                    )
-                    search_source = "Near Hotel"
-
                 if dinner_id:
-                    # Lưu ý: Nếu tìm quanh KS, thì phải tính đường: prev_id -> dinner_id
                     t = self.optimizer.get_time_between(prev_id, dinner_id)
-                    arrival = current_time + t / 60.0
+                    current_time += t/60.0
+                    final_day_route.append({
+                        "poi_id": dinner_id,
+                        "order": 0,
+                        "type": "Dinner",
+                        "name": self.poi_df.loc[dinner_id, 'name'],
+                        "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
+                        "travel_before_min": int(t),
+                        "duration_min": 90,
+                        "longitude": float(self.poi_df.loc[dinner_id, 'longitude']),
+                        "latitude": float(self.poi_df.loc[dinner_id, 'latitude']),
+                        "address": str(self.poi_df.loc[dinner_id, 'address']),
+                        "rating": float(self.poi_df.loc[dinner_id, 'rating'])
+                    })
+                    current_time += 1.5; prev_id = dinner_id; has_dinner = True
 
-                    # Chỉ ăn nếu đến nơi trước 20:30
-                    if arrival <= 20.5:
-                        
-                        final_day_route.append({
-                            "poi_id": dinner_id,
-                            "type": "Dinner",
-                            "name": self.poi_df.loc[dinner_id, 'name'] + (f" ({search_source})" if search_source=="Near Hotel" else ""),
-                            "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
-                            "travel_before_min": t,
-                            "longitude": self.poi_df.loc[dinner_id, 'longitude'],
-                            "latitude": self.poi_df.loc[dinner_id, 'latitude'],
-                            "address": self.poi_df.loc[dinner_id, 'address'],
-                            "rating": self.poi_df.loc[dinner_id, 'rating'],
-                            "duration_min": 90
-                        })
+            # --- RETURN HOTEL ---
+            t_home = self.optimizer.get_time_between(prev_id, start_poi_id)
+            current_time += t_home / 60.0
+            final_day_route.append({
+                "poi_id": start_poi_id,
+                "order": 0,
+                "type": "Return Hotel",
+                "name": "End of Day",
+                "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
+                "travel_before_min": int(t_home),
+                "duration_min": 0,
+                "longitude": float(self.poi_df.loc[start_poi_id, 'longitude']),
+                "latitude": float(self.poi_df.loc[start_poi_id, 'latitude']),
+                "address": str(self.poi_df.loc[start_poi_id, 'address']),
+                "rating": float(self.poi_df.loc[start_poi_id, 'rating'])
+            })
 
-                        current_time += 1.5
-                        prev_id = dinner_id
-                        has_dinner = True
-
-            # ---------- RETURN HOTEL ----------
-            if prev_id and start_poi_id:
-                t_home = self.optimizer.get_time_between(prev_id, start_poi_id)
-                arrival_home = current_time + t_home / 60.0
-
-                current_time = arrival_home
-
-                final_day_route.append({
-                    "poi_id": start_poi_id,
-                    "type": "Return Hotel",
-                    "name": "End of Day",
-                    "arrival_time": f"{int(current_time):02d}:{int((current_time%1)*60):02d}",
-                    "travel_before_min": t_home,
-                    "longitude": self.poi_df.loc[start_poi_id, 'longitude'],
-                    "latitude": self.poi_df.loc[start_poi_id, 'latitude'],
-                    "address": self.poi_df.loc[start_poi_id, 'address'],
-                    "rating": self.poi_df.loc[start_poi_id, 'rating'],
-                    "duration_min": 0
-                })
-
-            # Re-index order
-            for idx, item in enumerate(final_day_route):
+            # Re-index order & Clean data types
+            for idx, item in enumerate(final_day_route): 
                 item['order'] = idx + 1
-                
+            
             full_schedule.append({"day": day_idx + 1, "route": final_day_route})
 
+        export_df = self.export_csv(full_schedule)
+        self.export_df = export_df.to_csv("a.csv",index=False)  # Lưu CSV trong bộ nhớ nếu cần
         return full_schedule
 
     # =========================
