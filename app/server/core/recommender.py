@@ -1,4 +1,3 @@
-from sklearn.metrics import mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -26,9 +25,16 @@ class LinearRecommender(BaseRecommender):
 
 
 class RandomForestRecommender(BaseRecommender):
-    def __init__(self):
+    def __init__(self, n_estimators=200, max_depth=None, max_features=0.8, random_state=42):
         super().__init__(model_name="RandomForest")
-    
+        self.rf_params = dict(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            max_features=max_features,
+            random_state=random_state,
+            n_jobs=-1
+        )
+
     def train(self, df):
         df = self.feature_engineering(df)
         df = self.fit_encoders(df)
@@ -36,21 +42,17 @@ class RandomForestRecommender(BaseRecommender):
         X = df[self.features]
         y = df["label"]
 
-        self.model = RandomForestRegressor(
-            n_estimators=200,
-            max_depth=12,
-            max_features=0.7,
-            random_state=42,
-            n_jobs=-1
-        )
+        self.model = RandomForestRegressor(**self.rf_params)
 
         self.model.fit(X, y)
-        print(f"[{self.model_name}] Training finished.")
-
+        
+        print(f"[{self.model_name}] Training finished")
+        print("Params:", self.rf_params)
 
 class CatBoostRecommender(BaseRecommender):
     def __init__(self):
         super().__init__(model_name="CatBoost")
+        self.evals_result = None
 
     def train(self, train_df, val_df=None):
         train_df = self.feature_engineering(train_df)
@@ -88,7 +90,10 @@ class CatBoostRecommender(BaseRecommender):
             y_train,
             cat_features=self.cat_features,
             eval_set=eval_set,
-            use_best_model=val_df is not None
+            use_best_model=val_df is not None,
+            verbose=False
         )
+        
+        self.evals_result = self.model.get_evals_result()
 
         print(f"[{self.model_name}] Training finished.")

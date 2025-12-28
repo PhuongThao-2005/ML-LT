@@ -62,28 +62,62 @@ class NCFRecommender:
         return f"{city}_{user_type}_{price_level}"
 
     # ---------- TRAIN ----------
-    def train(self, df, epochs=100, batch_size=512, lr=1e-3):
-        df = df.copy()
+    def train(self, train_df, val_df, epochs=100, batch_size=512, lr=1e-3, patience=10):
 
-        df["user_idx"] = self.user_encoder.fit_transform(df["user_id"])
-        df["poi_idx"] = self.poi_encoder.fit_transform(df["poi_id"])
+        # ---------- Encode train + val chung ----------
+        full_df = pd.concat([train_df, val_df], ignore_index=True)
 
+        full_df["user_idx"] = self.user_encoder.fit_transform(full_df["user_id"])
+        full_df["poi_idx"]  = self.poi_encoder.fit_transform(full_df["poi_id"])
+
+        train_df = full_df.iloc[:len(train_df)].reset_index(drop=True)
+        val_df   = full_df.iloc[len(train_df):].reset_index(drop=True)
+
+        self.train_config = dict(
+            emb_dim=self.emb_dim,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            patience=patience
+        )
+
+        # ---------- Model ----------
         self.model = NCFModel(
-            df["user_idx"].nunique(),
-            df["poi_idx"].nunique(),
-            self.emb_dim
+            n_users=len(self.user_encoder.classes_),
+            n_items=len(self.poi_encoder.classes_),
+            emb_dim=self.emb_dim
         ).to(self.device)
 
-        dataset = InteractionDataset(df)
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        # ---------- DataLoader ----------
+        train_loader = DataLoader(
+            InteractionDataset(train_df),
+            batch_size=batch_size,
+            shuffle=True
+        )
+
+        val_loader = DataLoader(
+            InteractionDataset(val_df),
+            batch_size=batch_size
+        )
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         criterion = nn.MSELoss()
 
-        self.model.train()
+        # ---------- Log loss ----------
+        self.train_losses = []
+        self.val_losses = []
+
+        best_val_loss = float("inf")
+        best_state = None
+        patience_counter = 0
+
+        # ---------- Training ----------
         for e in range(epochs):
-            losses = []
-            for u, i, y in loader:
+            # ---- TRAIN ----
+            self.model.train()
+            train_loss = []
+
+            for u, i, y in train_loader:
                 u, i, y = u.to(self.device), i.to(self.device), y.to(self.device)
 
                 optimizer.zero_grad()
@@ -92,9 +126,47 @@ class NCFRecommender:
                 loss.backward()
                 optimizer.step()
 
-                losses.append(loss.item())
+                train_loss.append(loss.item())
 
-            print(f"[NCF] Epoch {e+1}/{epochs} - Loss: {np.mean(losses):.4f}")
+            # ---- VALIDATION ----
+            self.model.eval()
+            val_loss = []
+
+            with torch.no_grad():
+                for u, i, y in val_loader:
+                    u, i, y = u.to(self.device), i.to(self.device), y.to(self.device)
+                    preds = self.model(u, i)
+                    val_loss.append(criterion(preds, y).item())
+
+            self.train_losses.append(np.mean(train_loss))
+            self.val_losses.append(np.mean(val_loss))
+
+            print(
+                f"[NCF] Epoch {e+1}/{epochs} | "
+                f"Train MSE: {self.train_losses[-1]:.4f} | "
+                f"Val MSE: {self.val_losses[-1]:.4f}"
+            )
+
+            # ---------- EARLY STOPPING ----------
+            current_val = self.val_losses[-1]
+
+            if current_val < best_val_loss:
+                best_val_loss = current_val
+                best_state = self.model.state_dict()
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= patience:
+                print(
+                    f"⏹ Early stopping at epoch {e+1} "
+                    f"(best Val MSE = {best_val_loss:.4f})"
+                )
+                break
+
+        if best_state is not None:
+            self.model.load_state_dict(best_state)
+            print("✓ Best model (lowest Val MSE) restored")
 
     # ---------- RECOMMEND ----------
     def recommend(self, df_raw, city, user_type, user_price, top_k=50):
@@ -182,4 +254,3 @@ class NCFRecommender:
         self.model.load_state_dict(payload["state_dict"])
         self.model.eval()
         print("✓ [NCF] Model loaded")
-
